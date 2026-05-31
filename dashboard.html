@@ -1,0 +1,577 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>FOTA Campaign Manager</title>
+
+<style>
+
+body{
+    margin:0;
+    font-family:Arial, sans-serif;
+    background:#f4f6f9;
+}
+
+.header{
+    background:#1f2937;
+    color:white;
+    padding:20px;
+    font-size:24px;
+    font-weight:bold;
+}
+
+.container{
+    padding:20px;
+}
+
+.card{
+    background:white;
+    border-radius:10px;
+    padding:20px;
+    margin-bottom:20px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.1);
+}
+
+h2{
+    margin-top:0;
+}
+
+input{
+    width:100%;
+    padding:10px;
+    margin-top:10px;
+    margin-bottom:10px;
+    box-sizing:border-box;
+}
+
+button{
+    border:none;
+    border-radius:5px;
+    padding:10px 15px;
+    cursor:pointer;
+}
+
+.primary{
+    background:#2563eb;
+    color:white;
+}
+
+.approve{
+    background:#16a34a;
+    color:white;
+}
+
+.reject{
+    background:#dc2626;
+    color:white;
+}
+
+.pendingItem,
+.onlineItem,
+.campaignItem{
+    border:1px solid #ddd;
+    padding:10px;
+    margin-bottom:10px;
+    border-radius:5px;
+}
+
+#logs{
+    background:black;
+    color:#00ff00;
+    font-family:monospace;
+    height:350px;
+    overflow-y:auto;
+    padding:10px;
+}
+
+.status{
+    padding:10px;
+    background:#eef;
+    border-radius:5px;
+    margin-bottom:10px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="header">
+Automotive FOTA Dashboard
+</div>
+
+<div class="container">
+
+<!-- Pending TBMs -->
+
+<div class="card">
+
+<h2>Pending TBM Requests</h2>
+
+<div id="pendingList">
+No Pending Requests
+</div>
+
+</div>
+
+<!-- Connected TBMs -->
+
+<div class="card">
+
+<h2>Connected TBMs</h2>
+
+<div id="tbmList">
+No Connected TBMs
+</div>
+
+</div>
+
+<!-- Campaign Creation -->
+
+<div class="card">
+
+<h2>Create Campaign</h2>
+
+<input
+type="text"
+id="vin"
+placeholder="Target VIN">
+
+<input
+type="text"
+id="campaignName"
+placeholder="Campaign Name">
+
+<input
+type="file"
+id="campaignFirmware">
+
+<button
+class="primary"
+onclick="createCampaign()">
+
+Create Campaign
+
+</button>
+
+</div>
+
+<!-- Campaign History -->
+
+<div class="card">
+
+<h2>Campaign History</h2>
+
+<div id="campaignList">
+No Campaigns
+</div>
+
+</div>
+
+<!-- Logs -->
+
+<div class="card">
+
+<h2>Live Logs</h2>
+
+<div id="logs"></div>
+
+</div>
+
+</div>
+
+<script>
+
+/*
+LOCAL:
+http://localhost:8000
+
+RENDER:
+https://your-app.onrender.com
+*/
+
+const SERVER =
+"http://localhost:8000";
+
+
+/* ==========================
+   PENDING TBMS
+========================== */
+
+async function loadPending(){
+
+    const response =
+    await fetch(
+        SERVER + "/pending"
+    );
+
+    const data =
+    await response.json();
+
+    const div =
+    document.getElementById(
+        "pendingList"
+    );
+
+    div.innerHTML = "";
+
+    if(data.pending.length === 0){
+
+        div.innerHTML =
+        "No Pending Requests";
+
+        return;
+    }
+
+    data.pending.forEach(vin=>{
+
+        div.innerHTML +=
+        `
+        <div class="pendingItem">
+
+            <b>${vin}</b>
+
+            <br><br>
+
+            <button
+            class="approve"
+            onclick="approveTBM('${vin}')">
+
+            Approve
+
+            </button>
+
+            <button
+            class="reject"
+            onclick="rejectTBM('${vin}')">
+
+            Reject
+
+            </button>
+
+        </div>
+        `;
+    });
+}
+
+
+/* ==========================
+   CONNECTED TBMS
+========================== */
+
+async function loadTBMs(){
+
+    const response =
+    await fetch(
+        SERVER + "/tbms"
+    );
+
+    const data =
+    await response.json();
+
+    const div =
+    document.getElementById(
+        "tbmList"
+    );
+
+    div.innerHTML = "";
+
+    if(data.online_tbms.length === 0){
+
+        div.innerHTML =
+        "No Connected TBMs";
+
+        return;
+    }
+
+    data.online_tbms.forEach(vin=>{
+
+        div.innerHTML +=
+        `
+        <div class="onlineItem">
+
+            VIN : ${vin}
+
+        </div>
+        `;
+    });
+}
+
+
+/* ==========================
+   APPROVE TBM
+========================== */
+
+async function approveTBM(vin){
+
+    await fetch(
+        SERVER +
+        "/approve/" +
+        vin,
+        {
+            method:"POST"
+        }
+    );
+
+    loadPending();
+    loadTBMs();
+}
+
+
+/* ==========================
+   REJECT TBM
+========================== */
+
+async function rejectTBM(vin){
+
+    await fetch(
+        SERVER +
+        "/reject/" +
+        vin,
+        {
+            method:"POST"
+        }
+    );
+
+    loadPending();
+}
+
+
+/* ==========================
+   CREATE CAMPAIGN
+========================== */
+
+async function createCampaign(){
+
+    const vin =
+    document.getElementById(
+        "vin"
+    ).value;
+
+    const campaign =
+    document.getElementById(
+        "campaignName"
+    ).value;
+
+    const file =
+    document.getElementById(
+        "campaignFirmware"
+    ).files[0];
+
+    if(
+        !vin ||
+        !campaign ||
+        !file
+    ){
+
+        alert(
+            "Fill all fields"
+        );
+
+        return;
+    }
+
+    try{
+
+        // -------------------------
+        // Upload Firmware
+        // -------------------------
+
+        const formData =
+        new FormData();
+
+        formData.append(
+            "file",
+            file
+        );
+
+        const uploadResponse =
+        await fetch(
+            SERVER + "/upload",
+            {
+                method:"POST",
+                body:formData
+            }
+        );
+
+        const uploadResult =
+        await uploadResponse.json();
+
+        const firmwareFile =
+        uploadResult.file;
+
+        // -------------------------
+        // Create Campaign
+        // -------------------------
+
+        const campaignUrl =
+            SERVER +
+            "/campaign" +
+            "?vin=" +
+            encodeURIComponent(vin) +
+            "&campaign_name=" +
+            encodeURIComponent(campaign) +
+            "&firmware_file=" +
+            encodeURIComponent(
+                firmwareFile
+            );
+
+        const response =
+        await fetch(
+            campaignUrl,
+            {
+                method:"POST"
+            }
+        );
+
+        const result =
+        await response.json();
+
+        alert(
+            JSON.stringify(
+                result
+            )
+        );
+
+        loadCampaigns();
+
+    }
+    catch(error){
+
+        alert(
+            "Campaign Creation Failed"
+        );
+
+        console.error(error);
+    }
+}
+
+
+/* ==========================
+   CAMPAIGNS
+========================== */
+
+async function loadCampaigns(){
+
+    const response =
+    await fetch(
+        SERVER + "/campaigns"
+    );
+
+    const campaigns =
+    await response.json();
+
+    const div =
+    document.getElementById(
+        "campaignList"
+    );
+
+    div.innerHTML = "";
+
+    if(campaigns.length === 0){
+
+        div.innerHTML =
+        "No Campaigns";
+
+        return;
+    }
+
+    campaigns.forEach(c=>{
+
+        div.innerHTML +=
+        `
+        <div class="campaignItem">
+
+            <b>${c.campaign_name}</b>
+
+            <br>
+
+            VIN :
+            ${c.vin}
+
+            <br>
+
+            Firmware :
+            ${c.firmware_file}
+
+            <br>
+
+            Status :
+            ${c.status}
+
+        </div>
+        `;
+    });
+}
+
+
+/* ==========================
+   LOGS
+========================== */
+
+async function loadLogs(){
+
+    const response =
+    await fetch(
+        SERVER + "/logs"
+    );
+
+    const data =
+    await response.json();
+
+    const logs =
+    document.getElementById(
+        "logs"
+    );
+
+    logs.innerHTML = "";
+
+    data.forEach(item=>{
+
+        logs.innerHTML +=
+        item +
+        "<br>";
+
+    });
+
+    logs.scrollTop =
+    logs.scrollHeight;
+}
+
+
+/* ==========================
+   AUTO REFRESH
+========================== */
+
+loadPending();
+loadTBMs();
+loadLogs();
+loadCampaigns();
+
+setInterval(
+    loadPending,
+    1000
+);
+
+setInterval(
+    loadTBMs,
+    2000
+);
+
+setInterval(
+    loadLogs,
+    1000
+);
+
+setInterval(
+    loadCampaigns,
+    3000
+);
+
+</script>
+
+</body>
+</html>
+```
