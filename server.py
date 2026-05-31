@@ -214,7 +214,7 @@ async def campaign(
 
     base_url = os.getenv(
         "PUBLIC_URL",
-        "http://localhost:8000"
+        "https://fota-demo.onrender.com"
     )
 
     download_url = (
