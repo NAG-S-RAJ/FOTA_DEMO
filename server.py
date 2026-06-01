@@ -43,8 +43,12 @@ async def delete_campaign(campaign_id: str):
 
     campaigns = [
         c for c in campaigns
-        if c["id"] != campaign_id
+        if c["campaign_id"] != campaign_id
     ]
+
+    add_log(
+        f"Campaign Deleted: {campaign_id}"
+    )
 
     return {
         "status": "deleted"
