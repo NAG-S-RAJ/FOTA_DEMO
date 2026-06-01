@@ -36,7 +36,19 @@ def add_log(msg):
     if len(logs) > 500:
         logs.pop(0)
 
+@app.delete("/campaign/{campaign_id}")
+async def delete_campaign(campaign_id: str):
 
+    global campaigns
+
+    campaigns = [
+        c for c in campaigns
+        if c["id"] != campaign_id
+    ]
+
+    return {
+        "status": "deleted"
+    }
 # ======================
 # BASIC APIS
 # ======================
