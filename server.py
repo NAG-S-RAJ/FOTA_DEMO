@@ -313,6 +313,12 @@ async def websocket_endpoint(
             if msg_type == "register_request":
 
                 vin = data["vin"]
+                # Remove stale entries
+                if vin in pending_tbms:
+                    del pending_tbms[vin]
+
+                if vin in connected_tbms:
+                    del connected_tbms[vin]
 
                 pending_tbms[vin] = websocket
 
