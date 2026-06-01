@@ -323,7 +323,7 @@ async def websocket_endpoint(
             elif msg_type == "heartbeat":
 
                 add_log(
-                    f"{vin} heartbeat"
+                    f"Heartbeat Received -> {vin}"
                 )
 
             elif msg_type == "campaign_ack":
