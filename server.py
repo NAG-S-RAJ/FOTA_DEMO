@@ -2,6 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi import UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import PlainTextResponse
 import uvicorn
 import json
 import os
@@ -98,6 +99,16 @@ async def tbms():
         )
     }
 
+@app.get("/download_logs")
+async def download_logs():
+
+    return PlainTextResponse(
+        "\n".join(logs),
+        headers={
+            "Content-Disposition":
+            "attachment; filename=fota_logs.txt"
+        }
+    )
 
 @app.get("/logs")
 async def get_logs():
