@@ -545,8 +545,7 @@ async def websocket_endpoint(
                 else:
                     await websocket.send_text(json.dumps({"type":"not_registered"}))
                     add_log(f"{vin} not registered")
-    
-                await websocket.close()
+                    await websocket.close()
             
             elif msg_type == "heartbeat":
                 
