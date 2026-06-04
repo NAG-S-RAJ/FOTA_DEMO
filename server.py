@@ -3,20 +3,23 @@ from fastapi import UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import PlainTextResponse
-import sqlite3
 from datetime import datetime
 import uvicorn
 import json
 import os
 import uuid
 import hashlib
+import os
+import psycopg2
 
 app = FastAPI()
-DB_FILE = "fota.db"
 
-conn = sqlite3.connect(
-    DB_FILE,
-    check_same_thread=False
+DATABASE_URL = os.getenv(
+    "DATABASE_URL"
+)
+
+conn = psycopg2.connect(
+    DATABASE_URL
 )
 
 cursor = conn.cursor()
@@ -24,11 +27,12 @@ cursor = conn.cursor()
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS registered_tbms (
 
-    vin TEXT PRIMARY KEY,
+    vin VARCHAR(50)
+    PRIMARY KEY,
 
-    sw_version TEXT,
+    sw_version VARCHAR(50),
 
-    added_on TEXT
+    added_on TIMESTAMP
 
 )
 """)
@@ -93,30 +97,28 @@ async def delete_campaign(campaign_id: str):
         "status": "deleted"
     }
 
-@app.delete("/registered_tbm/{vin}")
+@app.delete(
+    "/registered_tbm/{vin}"
+)
 async def delete_registered_tbm(
     vin: str
 ):
 
-    cursor.execute("""
+    cursor.execute(
+        """
+        DELETE
+        FROM registered_tbms
 
-    DELETE FROM registered_tbms
+        WHERE vin=%s
+        """,
 
-    WHERE vin = ?
-
-    """,
-
-    (vin,)
+        (vin,)
     )
 
     conn.commit()
 
-    add_log(
-        f"TBM Deleted: {vin}"
-    )
-
     return {
-        "status": "deleted"
+        "status":"deleted"
     }
 
 # ======================
@@ -219,21 +221,12 @@ async def get_campaigns():
 # ======================
 @app.post("/register_tbm")
 async def register_tbm(
-
     vin: str,
-
     sw_version: str
-
 ):
 
-    added_on = datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-
-    try:
-
-        cursor.execute("""
-
+    cursor.execute(
+        """
         INSERT INTO registered_tbms
 
         (
@@ -242,31 +235,29 @@ async def register_tbm(
             added_on
         )
 
-        VALUES (?, ?, ?)
+        VALUES
+        (
+            %s,
+            %s,
+            NOW()
+        )
 
+        ON CONFLICT (vin)
+
+        DO NOTHING
         """,
 
         (
             vin,
-            sw_version,
-            added_on
-        ))
-
-        conn.commit()
-
-        add_log(
-            f"TBM Registered: {vin}"
+            sw_version
         )
+    )
 
-        return {
-            "status": "success"
-        }
+    conn.commit()
 
-    except sqlite3.IntegrityError:
-
-        return {
-            "status": "already_exists"
-        }
+    return {
+        "status":"success"
+    }
 
 @app.post("/upload")
 async def upload(
@@ -296,21 +287,21 @@ async def upload(
 @app.get("/registered_tbms")
 async def get_registered_tbms():
 
-    cursor.execute("""
+    cursor.execute(
+        """
+        SELECT
 
-    SELECT
+            vin,
 
-        vin,
+            sw_version,
 
-        sw_version,
+            added_on
 
-        added_on
+        FROM registered_tbms
 
-    FROM registered_tbms
-
-    ORDER BY added_on DESC
-
-    """)
+        ORDER BY added_on DESC
+        """
+    )
 
     rows = cursor.fetchall()
 
@@ -324,7 +315,8 @@ async def get_registered_tbms():
 
             "sw_version": row[1],
 
-            "added_on": row[2]
+            "added_on":
+            str(row[2])
 
         })
 
@@ -529,22 +521,34 @@ async def websocket_endpoint(
                 cursor.execute(
                     """
                     SELECT vin
+
                     FROM registered_tbms
-                    WHERE vin = ?
-                    """,(vin,))
+
+                    WHERE vin=%s
+                    """,
+
+                    (vin,)
+                )
+
                 row = cursor.fetchone()
                 if row:
-                    connected_tbms[vin] = websocket
 
+                    connected_tbms[vin] = websocket
+                
                     await websocket.send_text(
                         json.dumps({
-                        "type":"approved"}))
-
-                    add_log(f"{vin} approved")
-
+                            "type":"approved"
+                        })
+                    )
+                
                 else:
-                    await websocket.send_text(json.dumps({"type":"not_registered"}))
-                    add_log(f"{vin} not registered")
+                
+                    await websocket.send_text(
+                        json.dumps({
+                            "type":"not_registered"
+                        })
+                    )
+                
                     await websocket.close()
             
             elif msg_type == "heartbeat":
