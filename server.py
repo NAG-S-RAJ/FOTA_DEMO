@@ -239,7 +239,7 @@ async def register_tbm(
         (
             %s,
             %s,
-            NOW()
+            CURRENT_DATE
         )
 
         ON CONFLICT (vin)
