@@ -17,7 +17,10 @@ app = FastAPI()
 DATABASE_URL = os.getenv(
     "DATABASE_URL"
 )
-
+PUBLIC_URL = os.getenv(
+    "PUBLIC_URL",
+    "https://fota-demo.onrender.com"
+)
 conn = psycopg2.connect(
     DATABASE_URL
 )
@@ -25,11 +28,27 @@ conn = psycopg2.connect(
 cursor = conn.cursor()
 
 cursor.execute("""
+CREATE TABLE IF NOT EXISTS fota_release (
+
+    id SERIAL PRIMARY KEY,
+
+    sw_version VARCHAR(50),
+
+    firmware_file VARCHAR(255),
+
+    uploaded_on TIMESTAMP
+)
+""")
+
+conn.commit()
+
+cursor.execute("""
 CREATE TABLE IF NOT EXISTS registered_tbms (
 
     vin VARCHAR(50)
     PRIMARY KEY,
 
+    current_sw_version VARCHAR(50),
     sw_version VARCHAR(50),
 
     added_on TIMESTAMP
@@ -208,6 +227,55 @@ async def get_campaigns():
 # ======================
 # FILE UPLOAD
 # ======================
+@app.post("/release")
+async def create_release(
+
+    sw_version:str,
+
+    firmware_file:str
+
+):
+
+    cursor.execute(
+        """
+        DELETE FROM fota_release
+        """
+    )
+
+    cursor.execute(
+        """
+        INSERT INTO fota_release
+
+        (
+            sw_version,
+            firmware_file,
+            uploaded_on
+        )
+
+        VALUES
+        (
+            %s,
+            %s,
+            NOW()
+        )
+        """,
+
+        (
+            sw_version,
+            firmware_file
+        )
+    )
+
+    conn.commit()
+
+    add_log(
+        f"Latest Release Set -> "
+        f"{sw_version}"
+    )
+
+    return {
+        "status":"success"
+    }
 @app.post("/register_tbm")
 async def register_tbm(
     vin: str,
@@ -452,6 +520,7 @@ async def websocket_endpoint(
             if msg_type == "register_request":
 
                 vin = data["vin"]
+                
                 add_log(
                     f"Connection Request: {vin}")
                 cursor.execute(
@@ -477,7 +546,102 @@ async def websocket_endpoint(
                         })
                     )
                     add_log(f"{vin} approved")
-                
+                    tbm_sw = data.get("sw_version")
+                    cursor.execute(
+                        """
+                        UPDATE registered_tbms
+                    
+                        SET current_sw_version=%s
+                    
+                        WHERE vin=%s
+                        """,
+                    
+                        (
+                            tbm_sw,
+                            vin
+                        )
+                    )
+                    conn.commit()
+
+                    cursor.execute(
+                        """
+                        SELECT
+
+                            sw_version,
+
+                            firmware_file
+
+                        FROM fota_release
+
+                        LIMIT 1
+                        """
+                    )
+                    release = cursor.fetchone()
+                    if not release:
+                        add_log(
+                            "No software release configured")
+                        continue
+                    if release:
+
+                        target_sw = release[0]
+
+                        firmware_file = release[1]
+                    
+                    if tbm_sw != target_sw:
+
+                        add_log(
+                            f"{vin} SW mismatch"
+                        )
+
+                        add_log(
+                            f"Current:{tbm_sw}"
+                        )
+
+                        add_log(
+                            f"Target:{target_sw}"
+                        )
+                        file_path = os.path.join(
+                            UPLOAD_FOLDER,
+                            firmware_file
+                        )
+
+                        checksum = get_sha256(
+                            file_path
+                        )
+
+                        download_url = (
+                            f"{PUBLIC_URL}/files/"
+                            f"{firmware_file}"
+                        )
+
+                        await websocket.send_text(
+                            json.dumps({
+                            
+                                "type":"campaign",
+
+                                "campaign_name":
+                                "Auto Update",
+
+                                "firmware_file":
+                                firmware_file,
+
+                                "download_url":
+                                download_url,
+
+                                "checksum":
+                                checksum
+
+                            })
+                        )
+
+                        add_log(
+                            f"Auto Campaign "
+                            f"Sent -> {vin}"
+                        )
+                    else:
+                        add_log(
+                        f"{vin} already up to date")
+
                 else:
                     add_log(f"{vin} not registered")
                     await websocket.send_text(
@@ -508,8 +672,43 @@ async def websocket_endpoint(
 
             elif msg_type == "completed":
 
+                cursor.execute(
+                    """
+                    SELECT sw_version
+
+                    FROM fota_release
+
+                    LIMIT 1
+                    """
+                )
+
+                release = cursor.fetchone()
+
+                if release:
+                
+                    cursor.execute(
+                        """
+                        UPDATE registered_tbms
+
+                        SET current_sw_version=%s
+
+                        WHERE vin=%s
+                        """,
+
+                        (
+                            release[0],
+                            vin
+                        )
+                    )
+
+                    conn.commit()
+
                 add_log(
                     f"{vin} update completed"
+                )
+
+                add_log(
+                    f"{vin} registry updated"
                 )
 
             elif msg_type == "status_response":
