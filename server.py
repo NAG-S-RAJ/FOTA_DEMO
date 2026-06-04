@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS registered_tbms (
 
     sw_version VARCHAR(50),
 
-    added_on DATE
+    added_on TIMESTAMP
 
 )
 """)
@@ -242,7 +242,7 @@ async def register_tbm(
         (
             %s,
             %s,
-            CURRENT_DATE
+            NOW()
         )
         """,
         (
