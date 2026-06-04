@@ -524,19 +524,29 @@ async def websocket_endpoint(
             if msg_type == "register_request":
 
                 vin = data["vin"]
-                # Remove stale entries
-                if vin in pending_tbms:
-                    del pending_tbms[vin]
-
-                if vin in connected_tbms:
-                    del connected_tbms[vin]
-
-                pending_tbms[vin] = websocket
-
                 add_log(
-                    f"Connection Request: {vin}"
-                )
+                    f"Connection Request: {vin}")
+                cursor.execute(
+                    """
+                    SELECT vin
+                    FROM registered_tbms
+                    WHERE vin = ?
+                    """,(vin,))
+                row = cursor.fetchone()
+            if row:
+                connected_tbms[vin] = websocket
 
+                await websocket.send_text(
+                    json.dumps({
+                    "type":"approved"}))
+
+            add_log(f"{vin} approved")
+
+            else:
+                await websocket.send_text(json.dumps({"type":"not_registered"}))
+                add_log(f"{vin} not registered")
+
+            await websocket.close()
             elif msg_type == "heartbeat":
 
                 add_log(
