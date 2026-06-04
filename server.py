@@ -227,26 +227,35 @@ async def register_tbm(
 
     cursor.execute(
         """
-        INSERT INTO registered_tbms
+        SELECT vin
+        FROM registered_tbms
+        WHERE vin=%s
+        """,
+        (vin,)
+    )
 
+    if cursor.fetchone():
+
+        return {
+            "status": "error",
+            "message": "VIN already registered"
+        }
+
+    cursor.execute(
+        """
+        INSERT INTO registered_tbms
         (
             vin,
             sw_version,
             added_on
         )
-
         VALUES
         (
             %s,
             %s,
             CURRENT_DATE
         )
-
-        ON CONFLICT (vin)
-
-        DO NOTHING
         """,
-
         (
             vin,
             sw_version
@@ -254,6 +263,10 @@ async def register_tbm(
     )
 
     conn.commit()
+
+    add_log(
+        f"TBM Registered: {vin}"
+    )
 
     return {
         "status":"success"
@@ -315,8 +328,7 @@ async def get_registered_tbms():
 
             "sw_version": row[1],
 
-            "added_on":
-            str(row[2])
+            "added_on": row[2].strftime("%d-%m-%Y")
 
         })
 
