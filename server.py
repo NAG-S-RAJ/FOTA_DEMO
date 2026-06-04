@@ -3,6 +3,8 @@ from fastapi import UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import PlainTextResponse
+import sqlite3
+from datetime import datetime
 import uvicorn
 import json
 import os
@@ -10,6 +12,28 @@ import uuid
 import hashlib
 
 app = FastAPI()
+DB_FILE = "fota.db"
+
+conn = sqlite3.connect(
+    DB_FILE,
+    check_same_thread=False
+)
+
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS registered_tbms (
+
+    vin TEXT PRIMARY KEY,
+
+    sw_version TEXT,
+
+    added_on TEXT
+
+)
+""")
+
+conn.commit()
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,9 +92,77 @@ async def delete_campaign(campaign_id: str):
     return {
         "status": "deleted"
     }
+
+@app.delete("/registered_tbm/{vin}")
+async def delete_registered_tbm(
+    vin: str
+):
+
+    cursor.execute("""
+
+    DELETE FROM registered_tbms
+
+    WHERE vin = ?
+
+    """,
+
+    (vin,)
+    )
+
+    conn.commit()
+
+    add_log(
+        f"TBM Deleted: {vin}"
+    )
+
+    return {
+        "status": "deleted"
+    }
+
 # ======================
 # BASIC APIS
 # ======================
+@app.get("/registered_tbm/{vin}")
+async def get_tbm(
+    vin: str
+):
+
+    cursor.execute("""
+
+    SELECT
+
+        vin,
+
+        sw_version,
+
+        added_on
+
+    FROM registered_tbms
+
+    WHERE vin = ?
+
+    """,
+
+    (vin,)
+    )
+
+    row = cursor.fetchone()
+
+    if not row:
+
+        return {
+            "status": "not_found"
+        }
+
+    return {
+
+        "vin": row[0],
+
+        "sw_version": row[1],
+
+        "added_on": row[2]
+    }
+
 
 @app.get("/")
 async def root():
@@ -125,6 +217,56 @@ async def get_campaigns():
 # ======================
 # FILE UPLOAD
 # ======================
+@app.post("/register_tbm")
+async def register_tbm(
+
+    vin: str,
+
+    sw_version: str
+
+):
+
+    added_on = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    try:
+
+        cursor.execute("""
+
+        INSERT INTO registered_tbms
+
+        (
+            vin,
+            sw_version,
+            added_on
+        )
+
+        VALUES (?, ?, ?)
+
+        """,
+
+        (
+            vin,
+            sw_version,
+            added_on
+        ))
+
+        conn.commit()
+
+        add_log(
+            f"TBM Registered: {vin}"
+        )
+
+        return {
+            "status": "success"
+        }
+
+    except sqlite3.IntegrityError:
+
+        return {
+            "status": "already_exists"
+        }
 
 @app.post("/upload")
 async def upload(
@@ -151,6 +293,42 @@ async def upload(
         "file": file.filename
     }
 
+@app.get("/registered_tbms")
+async def get_registered_tbms():
+
+    cursor.execute("""
+
+    SELECT
+
+        vin,
+
+        sw_version,
+
+        added_on
+
+    FROM registered_tbms
+
+    ORDER BY added_on DESC
+
+    """)
+
+    rows = cursor.fetchall()
+
+    result = []
+
+    for row in rows:
+
+        result.append({
+
+            "vin": row[0],
+
+            "sw_version": row[1],
+
+            "added_on": row[2]
+
+        })
+
+    return result
 
 @app.get("/files/{filename}")
 async def file_download(
