@@ -533,22 +533,23 @@ async def websocket_endpoint(
                     WHERE vin = ?
                     """,(vin,))
                 row = cursor.fetchone()
-            if row:
-                connected_tbms[vin] = websocket
+                if row:
+                    connected_tbms[vin] = websocket
 
-                await websocket.send_text(
-                    json.dumps({
-                    "type":"approved"}))
+                    await websocket.send_text(
+                        json.dumps({
+                        "type":"approved"}))
 
-            add_log(f"{vin} approved")
+                    add_log(f"{vin} approved")
 
-            else:
-                await websocket.send_text(json.dumps({"type":"not_registered"}))
-                add_log(f"{vin} not registered")
-
-            await websocket.close()
+                else:
+                    await websocket.send_text(json.dumps({"type":"not_registered"}))
+                    add_log(f"{vin} not registered")
+    
+                await websocket.close()
+            
             elif msg_type == "heartbeat":
-
+                
                 add_log(
                     f"Heartbeat Received -> {vin}"
                 )
