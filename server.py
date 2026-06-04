@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS registered_tbms (
 
     sw_version VARCHAR(50),
 
-    added_on TIMESTAMP
+    added_on DATE
 
 )
 """)
