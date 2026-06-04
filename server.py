@@ -141,7 +141,7 @@ async def get_tbm(
 
     FROM registered_tbms
 
-    WHERE vin = ?
+    WHERE vin = %s
 
     """,
 
@@ -172,17 +172,6 @@ async def root():
     return {
         "status": "running"
     }
-
-
-@app.get("/pending")
-async def pending():
-
-    return {
-        "pending": list(
-            pending_tbms.keys()
-        )
-    }
-
 
 @app.get("/tbms")
 async def tbms():
@@ -349,71 +338,6 @@ async def file_download(
         filename=filename
     )
 
-
-# ======================
-# APPROVE / REJECT
-# ======================
-
-@app.post("/approve/{vin}")
-async def approve(vin: str):
-
-    if vin not in pending_tbms:
-
-        return {
-            "status": "not_found"
-        }
-
-    ws = pending_tbms[vin]
-
-    connected_tbms[vin] = ws
-
-    del pending_tbms[vin]
-
-    await ws.send_text(
-        json.dumps({
-            "type": "approved"
-        })
-    )
-
-    add_log(
-        f"{vin} approved"
-    )
-
-    return {
-        "status": "approved"
-    }
-
-
-@app.post("/reject/{vin}")
-async def reject(vin: str):
-
-    if vin not in pending_tbms:
-
-        return {
-            "status": "not_found"
-        }
-
-    ws = pending_tbms[vin]
-
-    await ws.send_text(
-        json.dumps({
-            "type": "rejected"
-        })
-    )
-
-    await ws.close()
-
-    del pending_tbms[vin]
-
-    add_log(
-        f"{vin} rejected"
-    )
-
-    return {
-        "status": "rejected"
-    }
-
-
 # ======================
 # CREATE CAMPAIGN
 # ======================
@@ -552,14 +476,14 @@ async def websocket_endpoint(
                             "type":"approved"
                         })
                     )
+                    add_log(f"{vin} approved")
                 
                 else:
-                
+                    add_log(f"{vin} not registered")
                     await websocket.send_text(
                         json.dumps({
-                            "type":"not_registered"
-                        })
-                    )
+                            "type":"not_registered"}))
+                    add_log(f"{vin} connection rejected")
                 
                     await websocket.close()
             
