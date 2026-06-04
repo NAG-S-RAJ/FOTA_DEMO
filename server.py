@@ -162,7 +162,7 @@ async def get_tbm(
 
         "sw_version": row[1],
 
-        "added_on": row[2].strftime("%d-%m-%Y")
+        "added_on": row[2]
     }
 
 
@@ -317,7 +317,7 @@ async def get_registered_tbms():
 
             "sw_version": row[1],
 
-            "added_on": row[2].strftime("%d-%m-%Y")
+            "added_on": row[2]
 
         })
 
