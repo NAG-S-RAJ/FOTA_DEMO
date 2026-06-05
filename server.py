@@ -141,7 +141,7 @@ async def get_tbm(
 
     FROM registered_tbms
 
-    WHERE vin = %s
+    WHERE vin = ?
 
     """,
 
@@ -172,6 +172,17 @@ async def root():
     return {
         "status": "running"
     }
+
+
+@app.get("/pending")
+async def pending():
+
+    return {
+        "pending": list(
+            pending_tbms.keys()
+        )
+    }
+
 
 @app.get("/tbms")
 async def tbms():
@@ -216,35 +227,26 @@ async def register_tbm(
 
     cursor.execute(
         """
-        SELECT vin
-        FROM registered_tbms
-        WHERE vin=%s
-        """,
-        (vin,)
-    )
-
-    if cursor.fetchone():
-
-        return {
-            "status": "error",
-            "message": "VIN already registered"
-        }
-
-    cursor.execute(
-        """
         INSERT INTO registered_tbms
+
         (
             vin,
             sw_version,
             added_on
         )
+
         VALUES
         (
             %s,
             %s,
             NOW()
         )
+
+        ON CONFLICT (vin)
+
+        DO NOTHING
         """,
+
         (
             vin,
             sw_version
@@ -252,10 +254,6 @@ async def register_tbm(
     )
 
     conn.commit()
-
-    add_log(
-        f"TBM Registered: {vin}"
-    )
 
     return {
         "status":"success"
@@ -317,7 +315,8 @@ async def get_registered_tbms():
 
             "sw_version": row[1],
 
-            "added_on": row[2]
+            "added_on":
+            str(row[2])
 
         })
 
@@ -337,6 +336,71 @@ async def file_download(
         path,
         filename=filename
     )
+
+
+# ======================
+# APPROVE / REJECT
+# ======================
+
+@app.post("/approve/{vin}")
+async def approve(vin: str):
+
+    if vin not in pending_tbms:
+
+        return {
+            "status": "not_found"
+        }
+
+    ws = pending_tbms[vin]
+
+    connected_tbms[vin] = ws
+
+    del pending_tbms[vin]
+
+    await ws.send_text(
+        json.dumps({
+            "type": "approved"
+        })
+    )
+
+    add_log(
+        f"{vin} approved"
+    )
+
+    return {
+        "status": "approved"
+    }
+
+
+@app.post("/reject/{vin}")
+async def reject(vin: str):
+
+    if vin not in pending_tbms:
+
+        return {
+            "status": "not_found"
+        }
+
+    ws = pending_tbms[vin]
+
+    await ws.send_text(
+        json.dumps({
+            "type": "rejected"
+        })
+    )
+
+    await ws.close()
+
+    del pending_tbms[vin]
+
+    add_log(
+        f"{vin} rejected"
+    )
+
+    return {
+        "status": "rejected"
+    }
+
 
 # ======================
 # CREATE CAMPAIGN
@@ -476,14 +540,14 @@ async def websocket_endpoint(
                             "type":"approved"
                         })
                     )
-                    add_log(f"{vin} approved")
                 
                 else:
-                    add_log(f"{vin} not registered")
+                
                     await websocket.send_text(
                         json.dumps({
-                            "type":"not_registered"}))
-                    add_log(f"{vin} connection rejected")
+                            "type":"not_registered"
+                        })
+                    )
                 
                     await websocket.close()
             
