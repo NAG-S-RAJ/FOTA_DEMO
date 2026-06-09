@@ -35,10 +35,17 @@ def ensure_connection():
     global conn, cursor
 
     try:
-        conn.poll()
+        if conn is None or conn.closed:
+            connect_db()
+            return
 
-    except (OperationalError, InterfaceError):
-        print("Database disconnected. Reconnecting...")
+        if cursor is None or cursor.closed:
+            cursor = conn.cursor()
+            return
+
+        cursor.execute("SELECT 1")
+
+    except Exception:
         connect_db()
 
 # Initial connection
@@ -53,6 +60,14 @@ CREATE TABLE IF NOT EXISTS registered_tbms (
 
     added_on TIMESTAMPTZ
 
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS logs (
+    id SERIAL PRIMARY KEY,
+    message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 )
 """)
 
@@ -177,7 +192,7 @@ async def delete_registered_tbm(
 async def get_tbm(
     vin: str
 ):
-
+    ensure_connection()
     cursor.execute("""
 
     SELECT
@@ -269,9 +284,9 @@ async def register_tbm(
     vin: str,
     sw_version: str
 ):
-
+    ensure_connection()
     try:
-
+        
         cursor.execute(
             """
             INSERT INTO registered_tbms
@@ -341,7 +356,7 @@ async def upload(
 
 @app.get("/registered_tbms")
 async def get_registered_tbms():
-
+    ensure_connection()
     cursor.execute("""
 
     SELECT
