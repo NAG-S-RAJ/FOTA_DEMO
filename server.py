@@ -9,6 +9,7 @@ import json
 import uuid
 import hashlib
 import psycopg2
+from psycopg2 import OperationalError, InterfaceError
 import os
 
 app = FastAPI()
@@ -16,11 +17,31 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL"
 )
 
-conn = psycopg2.connect(
-    DATABASE_URL
-)
+conn = None
+cursor = None
 
-cursor = conn.cursor()
+def connect_db():
+    global conn, cursor
+
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    cursor = conn.cursor()
+
+    print("Database connected")
+
+
+def ensure_connection():
+    global conn, cursor
+
+    try:
+        conn.poll()
+
+    except (OperationalError, InterfaceError):
+        print("Database disconnected. Reconnecting...")
+        connect_db()
+
+# Initial connection
+connect_db()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS registered_tbms (
@@ -68,13 +89,43 @@ def get_sha256(filepath):
     return sha256.hexdigest()
 
 def add_log(msg):
+    global cursor
 
+    # Console
     print(msg)
 
+    # Memory log
     logs.append(msg)
 
     if len(logs) > 500:
         logs.pop(0)
+
+    # Database log
+    ensure_connection()
+
+    try:
+        cursor.execute(
+            """
+            INSERT INTO logs (message)
+            VALUES (%s)
+            """,
+            (msg,)
+        )
+
+    except (OperationalError, InterfaceError):
+        print("Database disconnected. Reconnecting...")
+        connect_db()
+
+        cursor.execute(
+            """
+            INSERT INTO logs (message)
+            VALUES (%s)
+            """,
+            (msg,)
+        )
+
+    except Exception as e:
+        print(f"Log DB error: {e}")
 
 @app.delete("/campaign/{campaign_id}")
 async def delete_campaign(campaign_id: str):
