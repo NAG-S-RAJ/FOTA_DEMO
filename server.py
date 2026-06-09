@@ -361,8 +361,6 @@ async def approve(vin: str):
 
     ws = pending_tbms[vin]
 
-    connected_tbms[vin] = ws
-
     del pending_tbms[vin]
 
     await ws.send_text(
@@ -374,6 +372,27 @@ async def approve(vin: str):
     add_log(
         f"{vin} approved"
     )
+    cursor.execute(
+        """
+        INSERT INTO registered_tbms
+        (
+            vin,
+            sw_version,
+            added_on
+        )
+        VALUES (?, ?, ?)
+        """,
+        (
+            vin,
+            "1.0.0",
+            datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        )
+    )
+    conn.commit()
+
+    connected_tbms[vin] = ws
 
     return {
         "status": "approved"
@@ -524,18 +543,39 @@ async def websocket_endpoint(
             if msg_type == "register_request":
 
                 vin = data["vin"]
-                # Remove stale entries
-                if vin in pending_tbms:
-                    del pending_tbms[vin]
 
-                if vin in connected_tbms:
-                    del connected_tbms[vin]
-
-                pending_tbms[vin] = websocket
-
-                add_log(
-                    f"Connection Request: {vin}"
+                cursor.execute(
+                    """
+                    SELECT vin
+                    FROM registered_tbms
+                    WHERE vin = ?
+                    """,
+                    (vin,)
                 )
+
+                row = cursor.fetchone()
+
+                if row:
+                
+                    connected_tbms[vin] = websocket
+
+                    await websocket.send_text(
+                        json.dumps({
+                            "type": "approved"
+                        })
+                    )
+
+                    add_log(
+                        f"{vin} auto-approved (registered)"
+                    )
+
+                else:
+                
+                    pending_tbms[vin] = websocket
+
+                    add_log(
+                        f"{vin} pending approval (not registered)"
+                    )
 
             elif msg_type == "heartbeat":
 
