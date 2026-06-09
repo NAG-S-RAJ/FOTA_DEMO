@@ -272,8 +272,8 @@ async def register_tbm(
 
 ):
 
-    added_on = datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S"
+    added_on = datetime.now(
+        ZoneInfo("Asia/Kolkata")
     )
 
     try:
@@ -296,7 +296,7 @@ async def register_tbm(
             (
                 vin,
                 sw_version,
-                datetime.now()
+                datetime.now(ZoneInfo("Asia/Kolkata")
             )
         )
 
@@ -425,7 +425,7 @@ async def approve(vin: str):
             (
                 %s,
                 %s,
-                NOW()
+                datetime.now(ZoneInfo("Asia/Kolkata")
             )
             ON CONFLICT (vin)
             DO NOTHING
