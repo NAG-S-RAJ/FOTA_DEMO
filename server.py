@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import PlainTextResponse
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import uvicorn
 import json
 import uuid
@@ -265,16 +266,9 @@ async def get_campaigns():
 # ======================
 @app.post("/register_tbm")
 async def register_tbm(
-
     vin: str,
-
     sw_version: str
-
 ):
-
-    added_on = datetime.now(
-        ZoneInfo("Asia/Kolkata")
-    )
 
     try:
 
@@ -296,7 +290,9 @@ async def register_tbm(
             (
                 vin,
                 sw_version,
-                datetime.now(ZoneInfo("Asia/Kolkata")
+                datetime.now(
+                    ZoneInfo("Asia/Kolkata")
+                )
             )
         )
 
@@ -425,14 +421,17 @@ async def approve(vin: str):
             (
                 %s,
                 %s,
-                datetime.now(ZoneInfo("Asia/Kolkata")
+                %s
             )
             ON CONFLICT (vin)
             DO NOTHING
             """,
             (
                 vin,
-                "1.0.0"
+                "1.0.0",
+                datetime.now(
+                    ZoneInfo("Asia/Kolkata")
+                )
             )
         )
 
