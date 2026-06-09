@@ -3,20 +3,21 @@ from fastapi import UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import PlainTextResponse
-import sqlite3
 from datetime import datetime
 import uvicorn
 import json
-import os
 import uuid
 import hashlib
+import psycopg2
+import os
 
 app = FastAPI()
-DB_FILE = "fota.db"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL"
+)
 
-conn = sqlite3.connect(
-    DB_FILE,
-    check_same_thread=False
+conn = psycopg2.connect(
+    DATABASE_URL
 )
 
 cursor = conn.cursor()
@@ -24,11 +25,11 @@ cursor = conn.cursor()
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS registered_tbms (
 
-    vin TEXT PRIMARY KEY,
+    vin VARCHAR(50) PRIMARY KEY,
 
-    sw_version TEXT,
+    sw_version VARCHAR(50),
 
-    added_on TEXT
+    added_on TIMESTAMP
 
 )
 """)
@@ -98,15 +99,13 @@ async def delete_registered_tbm(
     vin: str
 ):
 
-    cursor.execute("""
-
-    DELETE FROM registered_tbms
-
-    WHERE vin = ?
-
-    """,
-
-    (vin,)
+    cursor.execute(
+        """
+        DELETE
+        FROM registered_tbms
+        WHERE vin=%s
+        """,
+        (vin,)
     )
 
     conn.commit()
@@ -133,13 +132,11 @@ async def get_tbm(
 
         vin,
 
-        sw_version,
-
-        added_on
+        sw_version
 
     FROM registered_tbms
 
-    WHERE vin = ?
+    WHERE vin = %s
 
     """,
 
@@ -158,9 +155,7 @@ async def get_tbm(
 
         "vin": row[0],
 
-        "sw_version": row[1],
-
-        "added_on": row[2]
+        "sw_version": row[1]
     }
 
 
@@ -232,25 +227,27 @@ async def register_tbm(
 
     try:
 
-        cursor.execute("""
-
-        INSERT INTO registered_tbms
-
-        (
-            vin,
-            sw_version,
-            added_on
+        cursor.execute(
+            """
+            INSERT INTO registered_tbms
+            (
+                vin,
+                sw_version,
+                added_on
+            )
+            VALUES
+            (
+                %s,
+                %s,
+                %s
+            )
+            """,
+            (
+                vin,
+                sw_version,
+                datetime.now()
+            )
         )
-
-        VALUES (?, ?, ?)
-
-        """,
-
-        (
-            vin,
-            sw_version,
-            added_on
-        ))
 
         conn.commit()
 
@@ -262,7 +259,9 @@ async def register_tbm(
             "status": "success"
         }
 
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
+
+        conn.rollback()
 
         return {
             "status": "already_exists"
@@ -361,7 +360,47 @@ async def approve(vin: str):
 
     ws = pending_tbms[vin]
 
+    try:
+
+        cursor.execute(
+            """
+            INSERT INTO registered_tbms
+            (
+                vin,
+                sw_version,
+                added_on
+            )
+            VALUES
+            (
+                %s,
+                %s,
+                NOW()
+            )
+            ON CONFLICT (vin)
+            DO NOTHING
+            """,
+            (
+                vin,
+                "1.0.0"
+            )
+        )
+
+        conn.commit()
+
+    except Exception as e:
+
+        add_log(
+            f"Database Error: {e}"
+        )
+
+        return {
+            "status": "db_error",
+            "message": str(e)
+        }
+
     del pending_tbms[vin]
+
+    connected_tbms[vin] = ws
 
     await ws.send_text(
         json.dumps({
@@ -370,29 +409,8 @@ async def approve(vin: str):
     )
 
     add_log(
-        f"{vin} approved"
+        f"{vin} approved and registered"
     )
-    cursor.execute(
-        """
-        INSERT INTO registered_tbms
-        (
-            vin,
-            sw_version,
-            added_on
-        )
-        VALUES (?, ?, ?)
-        """,
-        (
-            vin,
-            "1.0.0",
-            datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-        )
-    )
-    conn.commit()
-
-    connected_tbms[vin] = ws
 
     return {
         "status": "approved"
@@ -548,7 +566,7 @@ async def websocket_endpoint(
                     """
                     SELECT vin
                     FROM registered_tbms
-                    WHERE vin = ?
+                    WHERE vin = %s
                     """,
                     (vin,)
                 )
