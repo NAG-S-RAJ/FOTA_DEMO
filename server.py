@@ -734,13 +734,18 @@ async def websocket_endpoint(
 
             elif msg_type == "campaign_ack":
 
+                ensure_connection()
+
                 cursor.execute(
                     """
                     UPDATE campaigns
-                    SET status='acknowledged'
+                    SET status=%s
                     WHERE campaign_id=%s
                     """,
-                    (data["campaign_id"],)
+                    (
+                        "acknowledged",
+                        data["campaign_id"]
+                    )
                 )
 
                 conn.commit()
@@ -751,28 +756,66 @@ async def websocket_endpoint(
 
             elif msg_type == "progress":
 
-                add_log(
-                    f"{vin} progress "
-                    f"{data['progress']}%"
-                )
-
-            elif msg_type == "completed":
+                ensure_connection()
 
                 cursor.execute(
                     """
                     UPDATE campaigns
-                    SET status='completed'
+                    SET status=%s
                     WHERE campaign_id=%s
                     """,
-                    (data["campaign_id"],)
+                    (
+                        f"Downloading {data['progress']}%",
+                        data["campaign_id"]
+                    )
                 )
 
                 conn.commit()
 
                 add_log(
+                    f"{vin} progress {data['progress']}%"
+                )
+
+            elif msg_type == "completed":
+
+                ensure_connection()
+            
+                cursor.execute(
+                    """
+                    UPDATE campaigns
+                    SET status=%s
+                    WHERE campaign_id=%s
+                    """,
+                    (
+                        "completed",
+                        data["campaign_id"]
+                    )
+                )
+            
+                conn.commit()
+            
+                add_log(
                     f"{vin} update completed"
                 )
 
+            elif msg_type == "checksum_failed":
+
+                ensure_connection()
+
+                cursor.execute(
+                    """
+                    UPDATE campaigns
+                    SET status=%s
+                    WHERE campaign_id=%s
+                    """,
+                    (
+                        "checksum_failed",
+                        data["campaign_id"]
+                    )
+                )
+
+                conn.commit()
+            
             elif msg_type == "status_response":
 
                 add_log(
