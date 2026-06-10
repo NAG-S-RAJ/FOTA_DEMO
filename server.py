@@ -74,14 +74,6 @@ CREATE TABLE IF NOT EXISTS campaigns (
 )
 """)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS logs (
-    id SERIAL PRIMARY KEY,
-    message TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-)
-""")
-
 conn.commit()
 
 app.add_middleware(
@@ -97,8 +89,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 pending_tbms = {}
 connected_tbms = {}
-
-campaigns = []
 logs = []
 
 def get_sha256(filepath):
@@ -116,43 +106,13 @@ def get_sha256(filepath):
     return sha256.hexdigest()
 
 def add_log(msg):
-    global cursor
 
-    # Console
     print(msg)
 
-    # Memory log
     logs.append(msg)
 
     if len(logs) > 500:
         logs.pop(0)
-
-    # Database log
-    ensure_connection()
-
-    try:
-        cursor.execute(
-            """
-            INSERT INTO logs (message)
-            VALUES (%s)
-            """,
-            (msg,)
-        )
-
-    except (OperationalError, InterfaceError):
-        print("Database disconnected. Reconnecting...")
-        connect_db()
-
-        cursor.execute(
-            """
-            INSERT INTO logs (message)
-            VALUES (%s)
-            """,
-            (msg,)
-        )
-
-    except Exception as e:
-        print(f"Log DB error: {e}")
 
 @app.delete("/campaign/{campaign_id}")
 async def delete_campaign(campaign_id: str):
@@ -779,7 +739,7 @@ async def websocket_endpoint(
             elif msg_type == "completed":
 
                 ensure_connection()
-            
+
                 cursor.execute(
                     """
                     UPDATE campaigns
@@ -791,9 +751,9 @@ async def websocket_endpoint(
                         data["campaign_id"]
                     )
                 )
-            
+
                 conn.commit()
-            
+
                 add_log(
                     f"{vin} update completed"
                 )
