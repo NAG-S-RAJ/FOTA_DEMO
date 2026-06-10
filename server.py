@@ -45,7 +45,8 @@ def ensure_connection():
 
         cursor.execute("SELECT 1")
 
-    except Exception:
+    except Exception as e:
+        print(f"DB reconnect: {e}")
         connect_db()
 
 # Initial connection
@@ -60,6 +61,16 @@ CREATE TABLE IF NOT EXISTS registered_tbms (
 
     added_on TIMESTAMPTZ
 
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS campaigns (
+    campaign_id VARCHAR(100) PRIMARY KEY,
+    vin VARCHAR(50),
+    campaign_name VARCHAR(200),
+    firmware_file VARCHAR(255),
+    status VARCHAR(50)
 )
 """)
 
@@ -146,25 +157,29 @@ def add_log(msg):
 @app.delete("/campaign/{campaign_id}")
 async def delete_campaign(campaign_id: str):
 
-    global campaigns
+    ensure_connection()
 
-    campaigns = [
-        c for c in campaigns
-        if c["campaign_id"] != campaign_id
-    ]
+    cursor.execute(
+        """
+        DELETE FROM campaigns
+        WHERE campaign_id = %s
+        """,
+        (campaign_id,)
+    )
+
+    conn.commit()
 
     add_log(
         f"Campaign Deleted: {campaign_id}"
     )
 
-    return {
-        "status": "deleted"
-    }
+    return {"status": "deleted"}
 
 @app.delete("/registered_tbm/{vin}")
 async def delete_registered_tbm(
     vin: str
-):
+):  
+    ensure_connection()
 
     cursor.execute(
         """
@@ -273,7 +288,30 @@ async def get_logs():
 @app.get("/campaigns")
 async def get_campaigns():
 
-    return campaigns
+    ensure_connection()
+
+    cursor.execute("""
+        SELECT
+            campaign_id,
+            vin,
+            campaign_name,
+            firmware_file,
+            status
+        FROM campaigns
+    """)
+
+    rows = cursor.fetchall()
+
+    return [
+        {
+            "campaign_id": row[0],
+            "vin": row[1],
+            "campaign_name": row[2],
+            "firmware_file": row[3],
+            "status": row[4]
+        }
+        for row in rows
+    ]
 
 
 # ======================
@@ -421,9 +459,9 @@ async def approve(vin: str):
         }
 
     ws = pending_tbms[vin]
-
+    
     try:
-
+        ensure_connection()
         cursor.execute(
             """
             INSERT INTO registered_tbms
@@ -561,9 +599,37 @@ async def campaign(
         "status": "sent"
     }
 
-    campaigns.append(
-        campaign_info
+    ensure_connection()
+
+    cursor.execute(
+        """
+        INSERT INTO campaigns
+        (
+            campaign_id,
+            vin,
+            campaign_name,
+            firmware_file,
+            status
+        )
+        VALUES
+        (
+            %s,
+            %s,
+            %s,
+            %s,
+            %s
+        )
+        """,
+        (
+            campaign_id,
+            vin,
+            campaign_name,
+            firmware_file,
+            "sent"
+        )
     )
+
+    conn.commit()
 
     ws = connected_tbms[vin]
 
@@ -626,7 +692,7 @@ async def websocket_endpoint(
             if msg_type == "register_request":
 
                 vin = data["vin"]
-
+                ensure_connection()
                 cursor.execute(
                     """
                     SELECT vin
@@ -668,6 +734,17 @@ async def websocket_endpoint(
 
             elif msg_type == "campaign_ack":
 
+                cursor.execute(
+                    """
+                    UPDATE campaigns
+                    SET status='acknowledged'
+                    WHERE campaign_id=%s
+                    """,
+                    (data["campaign_id"],)
+                )
+
+                conn.commit()
+
                 add_log(
                     f"{vin} campaign acknowledged"
                 )
@@ -680,6 +757,17 @@ async def websocket_endpoint(
                 )
 
             elif msg_type == "completed":
+
+                cursor.execute(
+                    """
+                    UPDATE campaigns
+                    SET status='completed'
+                    WHERE campaign_id=%s
+                    """,
+                    (data["campaign_id"],)
+                )
+
+                conn.commit()
 
                 add_log(
                     f"{vin} update completed"
