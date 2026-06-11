@@ -516,6 +516,7 @@ async def reject(vin: str):
 
 @app.post("/campaign")
 async def campaign(
+    campaign_id: str,
     vin: str,
     campaign_name: str,
     firmware_file: str
@@ -527,9 +528,31 @@ async def campaign(
             "status": "TBM_NOT_CONNECTED"
         }
 
-    campaign_id = str(
-        uuid.uuid4()
+    campaign_id = campaign_id.strip()
+
+    if not campaign_id:
+        return {
+            "status": "error",
+            "message": "Campaign ID is required"
+        }
+    
+    ensure_connection()
+
+    cursor.execute(
+        """
+        SELECT campaign_id
+        FROM campaigns
+        WHERE campaign_id=%s
+        """,
+        (campaign_id,)
     )
+
+    if cursor.fetchone():
+
+        return {
+            "status": "error",
+            "message": "Campaign ID already exists"
+        }
 
     base_url = os.getenv(
         "PUBLIC_URL",
@@ -545,19 +568,6 @@ async def campaign(
     download_url = (
         f"{base_url}/files/{firmware_file}"
     )
-
-    campaign_info = {
-
-        "campaign_id": campaign_id,
-
-        "vin": vin,
-
-        "campaign_name": campaign_name,
-
-        "firmware_file": firmware_file,
-
-        "status": "sent"
-    }
 
     ensure_connection()
 
