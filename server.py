@@ -896,11 +896,27 @@ async def websocket_endpoint(
 
     finally:
 
-        if vin in pending_tbms:
-            del pending_tbms[vin]
-
-        if vin in connected_tbms:
-            del connected_tbms[vin]
+        if vin:
+        
+            if vin in pending_tbms:
+            
+                if pending_tbms[vin] is websocket:
+                
+                    del pending_tbms[vin]
+    
+                    add_log(
+                        f"Removed pending {vin}"
+                    )
+    
+            if vin in connected_tbms:
+            
+                if connected_tbms[vin] is websocket:
+                
+                    del connected_tbms[vin]
+    
+                    add_log(
+                        f"Removed connected {vin}"
+                    )
 
 
 if __name__ == "__main__":
