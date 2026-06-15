@@ -12,11 +12,16 @@ import hashlib
 import psycopg2
 from psycopg2 import OperationalError, InterfaceError
 import os
+import secrets
+import time
 
 app = FastAPI()
 DATABASE_URL = os.getenv(
     "DATABASE_URL"
 )
+
+AUTH_SECRET = "FOTA_DEMO_SECRET"
+pending_auth = {}
 
 conn = None
 cursor = None
@@ -662,39 +667,129 @@ async def websocket_endpoint(
             if msg_type == "register_request":
 
                 vin = data["vin"]
-                ensure_connection()
-                cursor.execute(
-                    """
-                    SELECT vin
-                    FROM registered_tbms
-                    WHERE vin = %s
-                    """,
-                    (vin,)
+
+                challenge = secrets.token_hex(16)
+
+                pending_auth[vin] = {
+                
+                    "challenge": challenge,
+
+                    "timestamp": time.time()
+
+                }
+
+                await websocket.send_text(
+                    json.dumps({
+                    
+                        "type": "challenge",
+
+                        "challenge": challenge
+
+                    })
                 )
 
-                row = cursor.fetchone()
+                add_log(
+                    f"Challenge sent -> {vin}"
+                )
 
-                if row:
-                
-                    connected_tbms[vin] = websocket
+            elif msg_type == "auth_response":
 
-                    await websocket.send_text(
-                        json.dumps({
-                            "type": "approved"
-                        })
-                    )
+               vin = data["vin"]
 
-                    add_log(
-                        f"{vin} auto-approved (registered)"
-                    )
+               response = data["response"]
 
-                else:
-                
-                    pending_tbms[vin] = websocket
+               if vin not in pending_auth:
 
-                    add_log(
-                        f"{vin} pending approval (not registered)"
-                    )
+                   await websocket.close()
+
+                   continue
+               
+               challenge = pending_auth[vin]["challenge"]
+
+               if time.time() - pending_auth[vin]["timestamp"] > 60:
+
+                   add_log(
+                       f"{vin} auth timeout"
+                   )
+
+                   del pending_auth[vin]
+
+                   await websocket.close()
+
+                   continue
+               
+               expected = hashlib.sha256(
+
+                   (
+                       challenge +
+                       AUTH_SECRET
+                   ).encode()
+
+               ).hexdigest()
+
+               if response != expected:
+
+                   add_log(
+                       f"{vin} authentication failed"
+                   )
+
+                   del pending_auth[vin]
+
+                   await websocket.send_text(
+                       json.dumps({
+                           "type":"auth_failed"
+                       })
+                   )
+
+                   await websocket.close()
+
+                   continue
+               
+               await websocket.send_text(
+                       json.dumps({
+                           "type":"auth_passed"
+                       })
+                   )
+               add_log(
+                   f"{vin} authentication passed"
+               )
+
+               del pending_auth[vin]
+
+               ensure_connection()
+
+               cursor.execute(
+                   """
+                   SELECT vin
+                   FROM registered_tbms
+                   WHERE vin=%s
+                   """,
+                   (vin,)
+               )
+
+               row = cursor.fetchone()
+
+               if row:
+
+                   connected_tbms[vin] = websocket
+
+                   await websocket.send_text(
+                       json.dumps({
+                           "type":"approved"
+                       })
+                   )
+
+                   add_log(
+                       f"{vin} auto-approved"
+                   )
+
+               else:
+
+                   pending_tbms[vin] = websocket
+
+                   add_log(
+                       f"{vin} pending approval"
+                   )
 
             elif msg_type == "heartbeat":
 
